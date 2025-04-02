@@ -1,0 +1,197 @@
+import Data.List
+import Data.Maybe
+import System.IO
+import System.Directory
+
+-- Abstract Data Type: PayrollDB for Encapsulation
+newtype PayrollDB = PayrollDB { getEmployees :: [Employee] } deriving (Show)
+
+-- Employee Data Structure
+data Employee = Employee {
+    empId       :: Int,
+    empName     :: String,
+    empPosition :: String,
+    empRate     :: Float,   -- hourly rate
+    empHours    :: Float    -- hours worked
+} deriving (Show, Read, Eq)
+
+databaseFile :: FilePath
+databaseFile = "payroll.db"  -- Persistent Storage File
+
+-- MAIN PROGRAM
+main :: IO ()
+main = do
+    putStrLn "=== Simple Payroll System with Persistent Storage ==="
+    payroll <- loadPayroll  -- Load employees from file
+    mainMenu payroll
+
+-- LOAD DATA FROM FILE
+loadPayroll :: IO PayrollDB
+loadPayroll = do
+    exists <- doesFileExist databaseFile
+    if exists then do
+        contents <- readFile databaseFile
+        return $ PayrollDB (read contents)
+    else return $ PayrollDB []  -- Return empty payroll if no file exists
+
+-- SAVE DATA TO FILE
+savePayroll :: PayrollDB -> IO ()
+savePayroll (PayrollDB payroll) = writeFile databaseFile (show payroll)
+
+-- MAIN MENU
+mainMenu :: PayrollDB -> IO ()
+mainMenu payroll = do
+    putStrLn "\nChoose an option:"
+    putStrLn "1. Add Employee"
+    putStrLn "2. Edit Employee"
+    putStrLn "3. Delete Employee"
+    putStrLn "4. Compute Salary"
+    putStrLn "5. Show All Employees"
+    putStrLn "6. Exit (Save & Cleanup)"
+    putStr "Enter your choice: "
+    hFlush stdout
+    choice <- getLine
+    case choice of
+        "1" -> do
+            newPayroll <- addEmployee payroll
+            savePayroll newPayroll
+            mainMenu newPayroll
+        "2" -> do
+            newPayroll <- editEmployee payroll
+            savePayroll newPayroll
+            mainMenu newPayroll
+        "3" -> do
+            newPayroll <- deleteEmployee payroll
+            savePayroll newPayroll
+            mainMenu newPayroll
+        "4" -> do
+            computeSalary payroll
+            mainMenu payroll
+        "5" -> do
+            showEmployees payroll
+            mainMenu payroll
+        "6" -> do
+            putStrLn "Saving data and exiting... (Garbage Collection simulated)"
+            savePayroll payroll
+            putStrLn "Data saved. Goodbye!"
+        _   -> do
+            putStrLn "Invalid option. Try again."
+            mainMenu payroll
+
+-- ADD EMPLOYEE
+addEmployee :: PayrollDB -> IO PayrollDB
+addEmployee (PayrollDB payroll) = do
+    putStrLn "\n== Add Employee =="
+    putStr "Enter Employee ID: "
+    hFlush stdout
+    idStr <- getLine
+    let eid = read idStr :: Int
+    if any (\e -> empId e == eid) payroll then do
+        putStrLn "Employee ID already exists!"
+        return (PayrollDB payroll)
+    else do
+        putStr "Enter Employee Name: "
+        hFlush stdout
+        name <- getLine
+        putStr "Enter Position: "
+        hFlush stdout
+        pos <- getLine
+        putStr "Enter Hourly Rate: "
+        hFlush stdout
+        rateStr <- getLine
+        let rate = read rateStr :: Float
+        putStr "Enter Hours Worked: "
+        hFlush stdout
+        hoursStr <- getLine
+        let hours = read hoursStr :: Float
+        let newEmp = Employee eid name pos rate hours
+        putStrLn "Employee added!"
+        return (PayrollDB (payroll ++ [newEmp]))
+
+-- EDIT EMPLOYEE
+editEmployee :: PayrollDB -> IO PayrollDB
+editEmployee (PayrollDB payroll) = do
+    putStrLn "\n== Edit Employee =="
+    putStr "Enter Employee ID to Edit: "
+    hFlush stdout
+    idStr <- getLine
+    let eid = read idStr :: Int
+    case find (\e -> empId e == eid) payroll of
+        Nothing -> do
+            putStrLn "Employee not found!"
+            return (PayrollDB payroll)
+        Just emp -> do
+            putStrLn $ "Editing " ++ empName emp
+            putStr "Enter new Name (leave blank to keep current): "
+            hFlush stdout
+            name <- getLine
+            putStr "Enter new Position (leave blank to keep current): "
+            hFlush stdout
+            pos <- getLine
+            putStr "Enter new Hourly Rate (leave blank to keep current): "
+            hFlush stdout
+            rateStr <- getLine
+            putStr "Enter new Hours Worked (leave blank to keep current): "
+            hFlush stdout
+            hoursStr <- getLine
+            let updatedEmp = Employee
+                                eid
+                                (if null name then empName emp else name)
+                                (if null pos then empPosition emp else pos)
+                                (if null rateStr then empRate emp else read rateStr)
+                                (if null hoursStr then empHours emp else read hoursStr)
+            let newPayroll = updatedEmp : filter (\e -> empId e /= eid) payroll
+            putStrLn "Employee updated!"
+            return (PayrollDB newPayroll)
+
+-- DELETE EMPLOYEE
+deleteEmployee :: PayrollDB -> IO PayrollDB
+deleteEmployee (PayrollDB payroll) = do
+    putStrLn "\n== Delete Employee =="
+    putStr "Enter Employee ID to Delete: "
+    hFlush stdout
+    idStr <- getLine
+    let eid = read idStr :: Int
+    if any (\e -> empId e == eid) payroll then do
+        let newPayroll = filter (\e -> empId e /= eid) payroll
+        putStrLn "Employee deleted!"
+        return (PayrollDB newPayroll)
+    else do
+        putStrLn "Employee not found!"
+        return (PayrollDB payroll)
+
+-- COMPUTE SALARY
+computeSalary :: PayrollDB -> IO ()
+computeSalary (PayrollDB payroll) = do
+    putStrLn "\n== Compute Salary =="
+    putStr "Enter Employee ID: "
+    hFlush stdout
+    idStr <- getLine
+    let eid = read idStr :: Int
+    case find (\e -> empId e == eid) payroll of
+        Nothing -> putStrLn "Employee not found!"
+        Just emp -> do
+            let basicSalary = empRate emp * empHours emp
+            let deductions = basicSalary * 0.10 -- 10% deduction for example
+            let netSalary = basicSalary - deductions
+            putStrLn $ "\nEmployee: " ++ empName emp
+            putStrLn $ "Position: " ++ empPosition emp
+            putStrLn $ "Basic Salary: $" ++ show basicSalary
+            putStrLn $ "Deductions (10%): $" ++ show deductions
+            putStrLn $ "Net Salary: $" ++ show netSalary
+
+-- SHOW ALL EMPLOYEES
+showEmployees :: PayrollDB -> IO ()
+showEmployees (PayrollDB []) = putStrLn "\nNo employees found!"
+showEmployees (PayrollDB payroll) = do
+    putStrLn "\n== Employee Records =="
+    mapM_ printEmployee payroll
+
+printEmployee :: Employee -> IO ()
+printEmployee emp = do
+    putStrLn $ "ID: " ++ show (empId emp)
+    putStrLn $ "Name: " ++ empName emp
+    putStrLn $ "Position: " ++ empPosition emp
+    putStrLn $ "Hourly Rate: $" ++ show (empRate emp)
+    putStrLn $ "Hours Worked: " ++ show (empHours emp)
+    putStrLn "-------------------------"
